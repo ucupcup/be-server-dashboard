@@ -1,0 +1,211 @@
+# ===========================================
+# CHICKEN FARM BACKEND - .gitignore
+# ===========================================
+# TypeScript + Express + WebSocket Backend
+
+# ===========================================
+# DEPENDENCIES
+# ===========================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Package manager lock files (choose one)
+# package-lock.json  # Uncomment if using yarn or pnpm
+# yarn.lock          # Uncomment if using npm or pnpm
+# pnpm-lock.yaml     # Uncomment if using npm or yarn
+
+# ===========================================
+# BUILD OUTPUT
+# ===========================================
+dist/
+build/
+*.tsbuildinfo
+
+# ===========================================
+# ENVIRONMENT & SECRETS
+# ===========================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.production
+
+# Configuration files with sensitive data
+config/production.json
+config/secrets.json
+secrets/
+private/
+
+# ===========================================
+# LOGS
+# ===========================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# ===========================================
+# TESTING & COVERAGE
+# ===========================================
+coverage/
+.nyc_output/
+test-results/
+*.lcov
+.jest/
+
+# ===========================================
+# CACHE & TEMPORARY
+# ===========================================
+.npm/
+.eslintcache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+.node_repl_history
+
+# TypeScript cache
+*.tsbuildinfo
+
+# ===========================================
+# EDITOR & IDE
+# ===========================================
+# VSCode
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# WebStorm
+.webstorm/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# ===========================================
+# OPERATING SYSTEM
+# ===========================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+.VolumeIcon.icns
+
+# Windows
+Thumbs.db
+ehthumbs.db
+*.stackdump
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ===========================================
+# DATABASE & STORAGE
+# ===========================================
+*.db
+*.sqlite
+*.sqlite3
+data/
+uploads/
+
+# ===========================================
+# MONITORING & ANALYTICS
+# ===========================================
+monitoring/
+metrics/
+analytics/
+
+# ===========================================
+# SECURITY
+# ===========================================
+# SSL certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+ssl/
+certs/
+
+# API keys and credentials
+api-keys.json
+credentials.json
+*.secret
+
+# ===========================================
+# DEPLOYMENT
+# ===========================================
+# Docker
+.dockerignore
+
+# PM2
+.pm2/
+
+# Serverless
+.serverless/
+
+# ===========================================
+# BACKUP & TEMP FILES
+# ===========================================
+*.backup
+*.bak
+*.tmp
+temp/
+
+# ===========================================
+# PROJECT SPECIFIC
+# ===========================================
+# Development scripts
+scripts/local/
+
+# Personal notes
+NOTES.md
+TODO.md
+personal/
+
+# Mock/test data with real sensor values
+mock-data/actual-data/
+test-data/real-sensor-data/
+
+# ===========================================
+# KEEP THESE FILES
+# ===========================================
+!.env.example
+!.gitkeep
+!README.md
+!LICENSE
