@@ -11,7 +11,7 @@ import { WebSocketHandlers } from "./websocket/handlers";
 class ChickenFarmServer {
   private app: express.Application;
   private server: http.Server;
-  private wss: WebSocketServer; // Fix: Use WebSocketServer instead of WebSocket.Server
+  private wss: WebSocketServer;
   private sensorService: SensorDataService;
   private wsService: WebSocketService;
   private wsHandlers: WebSocketHandlers;
@@ -31,17 +31,96 @@ class ChickenFarmServer {
   }
 
   private setupMiddleware(): void {
-    // CORS
-    this.app.use(cors(config.cors));
+    // Enhanced CORS for ngrok support
+    const ngrokOrigins = [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:8080',
+      /^https:\/\/.*\.ngrok\.io$/,
+      /^https:\/\/.*\.ngrok-free\.app$/,
+      /^https:\/\/.*\.ngrok\.dev$/
+    ];
+
+    // Safely handle config.cors.origin
+    let existingOrigins: (string | RegExp)[] = [];
+    if (config.cors.origin) {
+      if (Array.isArray(config.cors.origin)) {
+        existingOrigins = config.cors.origin;
+      } else if (typeof config.cors.origin === 'string') {
+        existingOrigins = [config.cors.origin];
+      } else if (typeof config.cors.origin === 'boolean') {
+        existingOrigins = config.cors.origin ? ['*'] : [];
+      }
+    }
+
+    const corsOptions = {
+      ...config.cors,
+      origin: [...ngrokOrigins, ...existingOrigins],
+      credentials: true,
+      optionsSuccessStatus: 200
+    };
+
+    this.app.use(cors(corsOptions));
+
+    // Ngrok-specific middleware
+    this.app.use((req, res, next) => {
+      // Skip ngrok browser warning
+      res.header('ngrok-skip-browser-warning', 'true');
+      
+      // Security headers for ngrok
+      res.header('X-Frame-Options', 'DENY');
+      res.header('X-Content-Type-Options', 'nosniff');
+      res.header('X-XSS-Protection', '1; mode=block');
+      
+      // Handle ngrok forwarded headers (extend req object properly)
+      if (req.headers['x-forwarded-proto'] === 'https') {
+        Object.defineProperty(req, 'secure', {
+          value: true,
+          writable: false,
+          enumerable: true,
+          configurable: true
+        });
+      }
+      
+      next();
+    });
 
     // JSON parsing
     this.app.use(express.json({ limit: "10mb" }));
     this.app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-    // Request logging
+    // Enhanced request logging with ngrok info
     this.app.use((req, res, next) => {
-      console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+      const timestamp = new Date().toISOString();
+      const method = req.method;
+      const path = req.path;
+      const userAgent = req.headers['user-agent'];
+      const isNgrok = req.headers.host?.includes('ngrok');
+      const forwardedFor = req.headers['x-forwarded-for'] || req.ip;
+      
+      console.log(`${timestamp} - ${method} ${path} ${isNgrok ? '[NGROK]' : '[LOCAL]'} - ${forwardedFor}`);
+      
+      // Log ESP32 requests specifically
+      if (userAgent?.includes('ESP32') || userAgent?.includes('arduino')) {
+        console.log(`ESP32 Request: ${method} ${path}`);
+      }
+      
       next();
+    });
+
+    // Health check endpoint for ngrok monitoring
+    this.app.get('/health', (req, res) => {
+      res.status(200).json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        environment: process.env.NODE_ENV || 'development',
+        ngrok: {
+          host: req.headers.host,
+          forwarded: !!req.headers['x-forwarded-proto'],
+          userAgent: req.headers['user-agent']
+        }
+      });
     });
   }
 
@@ -49,13 +128,39 @@ class ChickenFarmServer {
     // API routes
     this.app.use("/api", createRoutes(this.sensorService, this.wsService));
 
-    // Root endpoint
+    // Enhanced root endpoint with ngrok info
     this.app.get("/", (req, res) => {
+      const isNgrok = req.headers.host?.includes('ngrok');
+      
       res.json({
         message: "Chicken Farm Backend Server",
         version: "1.0.0",
         status: "running",
         timestamp: new Date(),
+        server: {
+          host: req.headers.host,
+          protocol: req.headers['x-forwarded-proto'] || req.protocol,
+          isNgrok: isNgrok,
+          endpoint: `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers.host}`
+        },
+        endpoints: {
+          api: `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers.host}/api`,
+          websocket: `${req.headers['x-forwarded-proto'] === 'https' ? 'wss' : 'ws'}://${req.headers.host}${config.websocket.path}`,
+          health: `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers.host}/health`
+        }
+      });
+    });
+
+    // ESP32 specific endpoint untuk testing koneksi
+    this.app.get("/api/esp32/test", (req, res) => {
+      res.json({
+        success: true,
+        message: "ESP32 connection test successful",
+        timestamp: new Date().toISOString(),
+        server: {
+          host: req.headers.host,
+          isNgrok: req.headers.host?.includes('ngrok') || false
+        }
       });
     });
 
@@ -65,18 +170,40 @@ class ChickenFarmServer {
         success: false,
         message: "Endpoint not found",
         timestamp: new Date(),
+        path: req.originalUrl
       });
     });
   }
 
   private setupWebSocket(): void {
-    // Fix: Use WebSocketServer constructor
     this.wss = new WebSocketServer({
       server: this.server,
       path: config.websocket.path,
+      // Enhanced WebSocket verification for ngrok
+      verifyClient: (info) => {
+        const origin = info.origin;
+        const host = info.req.headers.host;
+        
+        // Allow localhost and ngrok connections
+        if (!origin) return true; // Allow connections without origin (like ESP32)
+        
+        const allowedOrigins = [
+          /^https?:\/\/localhost/,
+          /^https:\/\/.*\.ngrok\.io$/,
+          /^https:\/\/.*\.ngrok-free\.app$/,
+          /^https:\/\/.*\.ngrok\.dev$/
+        ];
+        
+        return allowedOrigins.some(pattern => pattern.test(origin));
+      }
     });
 
-    this.wss.on("connection", this.wsHandlers.handleConnection);
+    this.wss.on("connection", (ws, req) => {
+      const isNgrok = req.headers.host?.includes('ngrok');
+      console.log(`WebSocket connection established ${isNgrok ? '[NGROK]' : '[LOCAL]'}`);
+      
+      this.wsHandlers.handleConnection(ws, req);
+    });
 
     console.log(`WebSocket server configured on path: ${config.websocket.path}`);
   }
@@ -165,8 +292,18 @@ class ChickenFarmServer {
       console.log(`HTTP API: http://localhost:${config.server.port}/api`);
       console.log(`WebSocket: ws://localhost:${config.server.port}${config.websocket.path}`);
       console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log("");
+      console.log("🌐 Ngrok Ready:");
+      console.log(`   Run: ngrok http ${config.server.port}`);
+      console.log(`   Then update ESP32 with ngrok URL`);
       console.log("=================================");
     });
+  }
+
+  // Helper method untuk mendapatkan ngrok URL jika tersedia
+  public getNgrokInfo(): string | null {
+    // This would need to be set externally or detected
+    return process.env.NGROK_URL || null;
   }
 }
 

@@ -9,7 +9,7 @@ export class WebSocketHandlers {
   public handleConnection = (ws: WebSocket, req: any): void => {
     this.wsService.addClient(ws);
 
-    // Send current data to new client
+    // Send current data to new client (only if it's not ESP32)
     const currentData = this.sensorService.getCurrentData();
     this.wsService.sendToClient(ws, {
       type: "sensor_data",
@@ -42,7 +42,9 @@ export class WebSocketHandlers {
   private handleMessage = (ws: WebSocket, data: WebSocket.Data): void => {
     try {
       const message: WebSocketMessage = JSON.parse(data.toString());
-      console.log("WebSocket message received:", message.type, message.data);
+      const isESP32 = this.wsService.isESP32WebSocket(ws);
+      
+      console.log(`WebSocket message received from ${isESP32 ? 'ESP32' : 'React Client'}: ${message.type}`, message.data);
 
       switch (message.type) {
         case "sensor_data":
@@ -50,7 +52,12 @@ export class WebSocketHandlers {
           break;
 
         case "fan_control":
-          this.handleFanControl(message.data);
+          // Only allow fan control from React clients, not ESP32
+          if (!isESP32) {
+            this.handleFanControlFromClient(message.data);
+          } else {
+            this.handleFanControl(message.data);
+          }
           break;
 
         case "threshold_update":
@@ -62,7 +69,7 @@ export class WebSocketHandlers {
           break;
 
         case "device_info":
-          this.handleDeviceInfo(message.data);
+          this.handleDeviceInfo(ws, message.data);
           break;
 
         case "client_connected":
@@ -71,6 +78,20 @@ export class WebSocketHandlers {
 
         case "request_status":
           this.handleStatusRequest(ws);
+          break;
+
+        case "fan_status":
+          // ESP32 sending fan status update
+          if (isESP32) {
+            this.handleFanStatusFromESP32(message.data);
+          }
+          break;
+
+        case "notification":
+          // ESP32 sending notifications
+          if (isESP32) {
+            this.handleNotificationFromESP32(message.data);
+          }
           break;
 
         default:
@@ -88,19 +109,20 @@ export class WebSocketHandlers {
   private handleSensorData = (data: any): void => {
     const updatedData = this.sensorService.updateSensorData(data);
 
-    // Broadcast to React clients
+    // Broadcast to React clients only
     this.wsService.broadcastToClients({
       type: "sensor_data",
       data: updatedData,
     });
   };
 
+  // Original fan control handler (for ESP32 responses)
   private handleFanControl = (data: any): void => {
     const updatedData = this.sensorService.updateFanState(data.state, "manual");
 
-    console.log(`Fan control: ${data.state ? "ON" : "OFF"}`);
+    console.log(`Fan control acknowledgment from ESP32: ${data.state ? "ON" : "OFF"}`);
 
-    // Broadcast to all clients
+    // Broadcast to React clients only
     this.wsService.broadcastToClients({
       type: "fan_status",
       data: {
@@ -110,12 +132,84 @@ export class WebSocketHandlers {
     });
   };
 
+  // New method: Handle fan control from React clients
+  private handleFanControlFromClient = (data: any): void => {
+    console.log(`Fan control command from React client: ${data.state ? "ON" : "OFF"}`);
+
+    // Update service state
+    const updatedData = this.sensorService.updateFanState(data.state, "manual");
+
+    // Send command to ESP32
+    this.wsService.broadcastToESP32({
+      type: "fan_control",
+      data: {
+        state: data.state,
+        deviceId: data.deviceId || 'chicken_farm_001',
+        mode: 'manual'
+      }
+    });
+
+    // Update React clients immediately for responsive UI
+    this.wsService.broadcastToClients({
+      type: "fan_status",
+      data: {
+        fanState: updatedData.fanState,
+        mode: "manual",
+        pending: true // Indicate this is pending ESP32 confirmation
+      },
+    });
+  };
+
+  // New method: Handle fan status update from ESP32
+  private handleFanStatusFromESP32 = (data: any): void => {
+    console.log(`Fan status update from ESP32: ${data.state ? "ON" : "OFF"}`);
+
+    // Update service state with ESP32 confirmation
+    const updatedData = this.sensorService.updateFanState(data.state, data.mode);
+
+    // Broadcast confirmed status to React clients
+    this.wsService.broadcastToClients({
+      type: "fan_status",
+      data: {
+        fanState: updatedData.fanState,
+        mode: data.mode,
+        deviceId: data.deviceId,
+        confirmed: true // ESP32 has confirmed the state
+      },
+    });
+  };
+
+  // New method: Handle notifications from ESP32
+  private handleNotificationFromESP32 = (data: any): void => {
+    console.log(`Notification from ESP32: ${data.eventType} - ${data.message}`);
+
+    // Broadcast notification to React clients
+    this.wsService.broadcastToClients({
+      type: "notification",
+      data: {
+        eventType: data.eventType,
+        message: data.message,
+        deviceId: data.deviceId,
+        timestamp: data.timestamp
+      },
+    });
+  };
+
   private handleThresholdUpdate = (data: any): void => {
     const updatedData = this.sensorService.updateThreshold(data.threshold);
 
     console.log(`Threshold updated: ${data.threshold}°C`);
 
-    // Broadcast to all clients
+    // Send to ESP32 if this came from React client
+    this.wsService.broadcastToESP32({
+      type: "threshold_update",
+      data: {
+        threshold: data.threshold,
+        deviceId: data.deviceId || 'chicken_farm_001'
+      }
+    });
+
+    // Broadcast to React clients
     this.wsService.broadcastToClients({
       type: "threshold_updated",
       data: {
@@ -129,7 +223,17 @@ export class WebSocketHandlers {
 
     console.log(`Mode changed - Auto: ${data.autoMode}, Manual: ${data.manualMode}`);
 
-    // Broadcast to all clients
+    // Send to ESP32 if this came from React client
+    this.wsService.broadcastToESP32({
+      type: "mode_change",
+      data: {
+        autoMode: data.autoMode,
+        manualMode: data.manualMode,
+        deviceId: data.deviceId || 'chicken_farm_001'
+      }
+    });
+
+    // Broadcast to React clients
     this.wsService.broadcastToClients({
       type: "mode_updated",
       data: {
@@ -139,13 +243,15 @@ export class WebSocketHandlers {
     });
   };
 
-  private handleDeviceInfo = (data: any): void => {
+  // Updated to properly set ESP32 WebSocket connection
+  private handleDeviceInfo = (ws: WebSocket, data: any): void => {
     const updatedData = this.sensorService.updateSensorData(data);
 
-    this.wsService.setESP32Connection(data.deviceId);
-    console.log(`Device info received from ${data.deviceId}`);
+    // Set this WebSocket as ESP32 connection
+    this.wsService.setESP32WebSocket(ws, data.deviceId);
+    console.log(`ESP32 device info received from ${data.deviceId}`);
 
-    // Broadcast device status
+    // Broadcast device status to React clients only
     this.wsService.broadcastToClients({
       type: "device_status",
       data: {
@@ -153,6 +259,19 @@ export class WebSocketHandlers {
         deviceId: data.deviceId,
         deviceName: data.deviceName,
       },
+    });
+
+    // Send welcome message back to ESP32 with current settings
+    this.wsService.sendToClient(ws, {
+      type: "welcome",
+      data: {
+        message: "ESP32 connected successfully",
+        currentSettings: {
+          autoMode: updatedData.autoMode,
+          manualMode: updatedData.manualMode,
+          temperatureThreshold: updatedData.temperatureThreshold,
+        }
+      }
     });
   };
 
@@ -166,6 +285,7 @@ export class WebSocketHandlers {
         message: "Connected to Chicken Farm Backend",
         currentData: this.sensorService.getCurrentData(),
         esp32Connected: this.wsService.isESP32Connected(),
+        connectionStats: this.wsService.getConnectionStats(),
       },
     });
   };
@@ -179,6 +299,7 @@ export class WebSocketHandlers {
         sensorData: currentData,
         esp32Connected: this.wsService.isESP32Connected(),
         deviceOnline: this.sensorService.isDeviceOnline(),
+        connectionStats: this.wsService.getConnectionStats(),
       },
     });
   };
