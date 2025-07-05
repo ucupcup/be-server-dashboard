@@ -55,3 +55,12 @@ export interface ModeChangeRequest {
   autoMode: boolean;
   manualMode: boolean;
 }
+
+export interface LoginDTO {
+  email: string;
+  password: string;
+}
+
+export interface RegisterDTO extends LoginDTO {
+  name: string;
+}

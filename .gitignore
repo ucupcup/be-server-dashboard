@@ -209,3 +209,4 @@ test-data/real-sensor-data/
 !.gitkeep
 !README.md
 !LICENSE
+/src/generated/prisma
