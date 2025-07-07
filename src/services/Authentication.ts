@@ -43,6 +43,11 @@ export const loginService = async (body: LoginDTO) => {
     error: false,
     code: 200,
     message: "Login berhasil",
+    data: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+    }
   };
 };
 
@@ -56,7 +61,7 @@ export const registerService = async (body: RegisterDTO) => {
     };
   }
   const user = await db.user.findUnique({ where: { email: body.email } });
-  if (!user) {
+  if (user) {
     return {
       error: true,
       code: 400,
@@ -77,6 +82,6 @@ export const registerService = async (body: RegisterDTO) => {
   return {
     error: false,
     code: 201,
-    message: "Register2 berhasil",
+    message: "Register berhasil",
   };
 };

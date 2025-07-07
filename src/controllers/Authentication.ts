@@ -11,6 +11,7 @@ export const loginController = async (req: Request, res: Response) => {
     success: !service.error,
     timestamp: new Date(),
     message: service.message,
+    data: service.data,
   };
 
   res.status(service.code).jsonp(payload);
